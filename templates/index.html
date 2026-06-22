@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AC Generator — Jira Agent</title>
+  <style>
+    /* ── Design tokens ── */
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --border:    #2a2d3e;
+      --accent:    #6c63ff;
+      --accent-hi: #8b85ff;
+      --text:      #e8e9f0;
+      --muted:     #8890a8;
+      --success:   #34d399;
+      --error:     #f87171;
+      --mono:      "JetBrains Mono", "Fira Code", "Courier New", monospace;
+      --sans:      "Inter", system-ui, -apple-system, sans-serif;
+      --radius:    10px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2.5rem 1.25rem 4rem;
+    }
+
+    /* ── Header ── */
+    header {
+      text-align: center;
+      margin-bottom: 2.75rem;
+      max-width: 600px;
+    }
+
+    .logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 1.1rem;
+    }
+
+    .logo-icon {
+      width: 38px; height: 38px;
+      background: var(--accent);
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.25rem;
+    }
+
+    .logo-text {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+
+    h1 {
+      font-size: clamp(1.75rem, 4vw, 2.4rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      margin-bottom: 0.75rem;
+    }
+
+    h1 span { color: var(--accent-hi); }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2rem;
+      width: 100%;
+      max-width: 700px;
+      margin-bottom: 1.5rem;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 0.75rem;
+      margin-bottom: 0;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 1rem;
+      padding: 0.75rem 1rem;
+      outline: none;
+      transition: border-color 0.15s;
+      letter-spacing: 0.03em;
+    }
+
+    input[type="text"]::placeholder { color: var(--muted); opacity: 0.6; }
+    input[type="text"]:focus { border-color: var(--accent); }
+
+    button#generate-btn {
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      cursor: pointer;
+      font-family: var(--sans);
+      font-size: 0.95rem;
+      font-weight: 600;
+      padding: 0.75rem 1.4rem;
+      transition: background 0.15s, transform 0.1s;
+      white-space: nowrap;
+    }
+
+    button#generate-btn:hover { background: var(--accent-hi); }
+    button#generate-btn:active { transform: scale(0.97); }
+    button#generate-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+    /* ── Spinner ── */
+    .spinner-wrap {
+      display: none;
+      align-items: center;
+      gap: 0.6rem;
+      margin-top: 1.25rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .spinner-wrap.visible { display: flex; }
+
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2.5px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Result panel ── */
+    #result-panel {
+      display: none;
+      width: 100%;
+      max-width: 700px;
+    }
+
+    #result-panel.visible { display: block; }
+
+    .result-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 0.9rem;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .ticket-badge {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--accent-hi);
+      background: rgba(108, 99, 255, 0.12);
+      border: 1px solid rgba(108, 99, 255, 0.3);
+      border-radius: 5px;
+      padding: 0.2rem 0.55rem;
+      letter-spacing: 0.04em;
+    }
+
+    .ticket-summary {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .meta-row {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .meta-chip {
+      font-size: 0.78rem;
+      color: var(--muted);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.15rem 0.5rem;
+    }
+
+    .ac-output {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      font-size: 0.9rem;
+      line-height: 1.7;
+      color: var(--text);
+      overflow-x: auto;
+    }
+
+    /* Markdown-like rendering */
+    .ac-output h1, .ac-output h2, .ac-output h3 {
+      color: var(--text);
+      font-size: 1rem;
+      font-weight: 700;
+      margin: 1.1rem 0 0.4rem;
+    }
+
+    .ac-output p { margin-bottom: 0.75rem; }
+
+    .ac-output ul, .ac-output ol {
+      padding-left: 1.4rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .ac-output li { margin-bottom: 0.35rem; }
+
+    .ac-output code {
+      font-family: var(--mono);
+      font-size: 0.85em;
+      background: rgba(108,99,255,0.12);
+      border-radius: 4px;
+      padding: 0.1em 0.35em;
+      color: var(--accent-hi);
+    }
+
+    .ac-output strong { color: var(--text); font-weight: 700; }
+
+    /* ── Actions ── */
+    .actions-row {
+      display: flex;
+      gap: 0.6rem;
+      margin-top: 1rem;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      cursor: pointer;
+      font-family: var(--sans);
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 0.5rem 1rem;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .btn-secondary:hover { border-color: var(--accent); color: var(--text); }
+
+    /* ── Error / success messages ── */
+    .flash {
+      border-radius: 8px;
+      font-size: 0.875rem;
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+    }
+
+    .flash.error { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); color: var(--error); }
+    .flash.success { background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.3); color: var(--success); }
+
+    /* ── Webhook info box ── */
+    .info-box {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-top: 0;
+      max-width: 700px;
+      width: 100%;
+    }
+
+    .info-box summary {
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--muted);
+      padding: 0.85rem 1.25rem;
+      user-select: none;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .info-box summary::before { content: "›"; font-size: 1rem; transition: transform 0.15s; }
+    .info-box[open] summary::before { transform: rotate(90deg); }
+
+    .info-box-body {
+      padding: 0 1.25rem 1.25rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    .info-box-body code {
+      font-family: var(--mono);
+      font-size: 0.82em;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 0.65rem 1rem;
+      display: block;
+      margin: 0.5rem 0;
+      color: var(--accent-hi);
+      overflow-x: auto;
+    }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: auto;
+      padding-top: 3rem;
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-align: center;
+      opacity: 0.6;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo">
+      <div class="logo-icon">✦</div>
+      <span class="logo-text">AC Agent</span>
+    </div>
+    <h1>Generate <span>Acceptance Criteria</span><br>from any Jira ticket</h1>
+    <p class="subtitle">
+      Enter a ticket key below and the agent will fetch the ticket from Jira and<br>
+      generate structured, testable acceptance criteria using Claude.
+    </p>
+  </header>
+
+  <!-- Input card -->
+  <div class="card">
+    <div class="input-row">
+      <input
+        type="text"
+        id="ticket-input"
+        placeholder="e.g. PROJ-123"
+        autocomplete="off"
+        autocorrect="off"
+        spellcheck="false"
+      />
+      <button id="generate-btn">Generate AC</button>
+    </div>
+
+    <div class="spinner-wrap" id="spinner">
+      <div class="spinner"></div>
+      <span>Fetching ticket and generating criteria…</span>
+    </div>
+
+    <div id="flash-msg" class="flash" style="display:none;"></div>
+  </div>
+
+  <!-- Result panel (hidden until a result is ready) -->
+  <div id="result-panel">
+    <div class="card">
+      <div class="result-header">
+        <div>
+          <span class="ticket-badge" id="res-key"></span>
+          &nbsp;
+          <span class="ticket-summary" id="res-summary"></span>
+        </div>
+      </div>
+
+      <div class="meta-row">
+        <span class="meta-chip" id="res-model"></span>
+        <span class="meta-chip" id="res-tokens"></span>
+      </div>
+
+      <div class="ac-output" id="res-ac"></div>
+
+      <div class="actions-row">
+        <button class="btn-secondary" id="copy-btn">Copy</button>
+        <button class="btn-secondary" id="clear-btn">Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Webhook info -->
+  <details class="info-box">
+    <summary>Using the Jira webhook integration</summary>
+    <div class="info-box-body">
+      <p>
+        This service also accepts Jira webhook events. Configure a webhook in your
+        Jira project settings pointing to:
+      </p>
+      <code>POST {{ request.host_url }}webhook/jira</code>
+      <p>
+        Supported events: <strong>issue_created</strong>, <strong>issue_updated</strong>.
+        Set your <code>WEBHOOK_SECRET</code> env var to match the secret configured in Jira
+        for signature verification. Generated AC is logged server-side — extend
+        <code>app.py</code> to post it back as a comment or to a Slack channel.
+      </p>
+    </div>
+  </details>
+
+  <footer>Powered by Claude &amp; Jira REST API</footer>
+
+  <script>
+    // ── Minimal Markdown renderer ──────────────────────────────────────────────
+    function renderMarkdown(md) {
+      return md
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        // headings
+        .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+        .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+        .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+        // bold
+        .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+        // inline code
+        .replace(/`([^`]+)`/g, "<code>$1</code>")
+        // unordered lists
+        .replace(/^[\-\*] (.+)$/gm, "<li>$1</li>")
+        // ordered lists
+        .replace(/^\d+\. (.+)$/gm, "<li>$1</li>")
+        // wrap consecutive <li>s in <ul>
+        .replace(/(<li>[\s\S]*?<\/li>)(\n<li>[\s\S]*?<\/li>)*/g, m => `<ul>${m}</ul>`)
+        // paragraphs (blank-line-separated)
+        .replace(/\n{2,}/g, "\n")
+        .replace(/^(?!<[hul]|$)(.+)$/gm, "<p>$1</p>");
+    }
+
+    // ── DOM refs ───────────────────────────────────────────────────────────────
+    const input      = document.getElementById("ticket-input");
+    const btn        = document.getElementById("generate-btn");
+    const spinner    = document.getElementById("spinner");
+    const flash      = document.getElementById("flash-msg");
+    const panel      = document.getElementById("result-panel");
+    const resKey     = document.getElementById("res-key");
+    const resSummary = document.getElementById("res-summary");
+    const resModel   = document.getElementById("res-model");
+    const resTokens  = document.getElementById("res-tokens");
+    const resAc      = document.getElementById("res-ac");
+    const copyBtn    = document.getElementById("copy-btn");
+    const clearBtn   = document.getElementById("clear-btn");
+
+    let lastAcText = "";
+
+    // ── Utils ──────────────────────────────────────────────────────────────────
+    function showFlash(msg, type = "error") {
+      flash.textContent = msg;
+      flash.className = `flash ${type}`;
+      flash.style.display = "block";
+    }
+
+    function hideFlash() { flash.style.display = "none"; }
+
+    function setLoading(on) {
+      btn.disabled = on;
+      btn.textContent = on ? "Generating…" : "Generate AC";
+      spinner.classList.toggle("visible", on);
+    }
+
+    // ── Generate ───────────────────────────────────────────────────────────────
+    async function generate() {
+      const key = input.value.trim().toUpperCase();
+      if (!key) { showFlash("Please enter a ticket key, e.g. PROJ-123"); return; }
+
+      hideFlash();
+      panel.classList.remove("visible");
+      setLoading(true);
+
+      try {
+        const resp = await fetch("/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticket_key: key }),
+        });
+
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          showFlash(data.error || "Something went wrong.");
+          return;
+        }
+
+        lastAcText = data.acceptance_criteria;
+        resKey.textContent     = data.ticket_key;
+        resSummary.textContent = data.ticket_summary;
+        resModel.textContent   = `Model: ${data.model_used}`;
+        resTokens.textContent  = `Tokens: ${data.tokens.input} in / ${data.tokens.output} out`;
+        resAc.innerHTML        = renderMarkdown(data.acceptance_criteria);
+        panel.classList.add("visible");
+
+      } catch (err) {
+        showFlash("Network error — is the server running?");
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    btn.addEventListener("click", generate);
+    input.addEventListener("keydown", e => { if (e.key === "Enter") generate(); });
+
+    // ── Copy ───────────────────────────────────────────────────────────────────
+    copyBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(lastAcText);
+        copyBtn.textContent = "Copied!";
+        setTimeout(() => { copyBtn.textContent = "Copy"; }, 1800);
+      } catch {
+        showFlash("Copy failed — please select and copy manually.");
+      }
+    });
+
+    // ── Clear ──────────────────────────────────────────────────────────────────
+    clearBtn.addEventListener("click", () => {
+      panel.classList.remove("visible");
+      input.value = "";
+      input.focus();
+      lastAcText = "";
+    });
+  </script>
+</body>
+</html>
